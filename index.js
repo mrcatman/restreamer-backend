@@ -24,6 +24,10 @@ io.use(function(socket, next) {
 });
 
 app.use(sessionMiddleware);
+app.use((req, res, next) => {
+	res.header("Access-Control-Allow-Origin", "*");
+	return next();
+});
 
 waterline.initialize(config, (err, db)=> {
     if (err) {
