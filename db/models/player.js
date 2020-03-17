@@ -10,6 +10,9 @@ let player = Waterline.Collection.extend({
                 autoIncrement: true
             }
         },
+        sessionId: {
+            type: 'string'
+        },
         name: {
             type: 'string'
         },

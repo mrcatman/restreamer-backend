@@ -10,7 +10,7 @@ let game = Waterline.Collection.extend({
                 autoIncrement: true
             }
         },
-        socketId: {
+        userId: {
             type: 'string'
         },
         name: {
@@ -29,6 +29,9 @@ let game = Waterline.Collection.extend({
         },
         state: {
             type: 'string'
+        },
+        additionalStateData: {
+            type: 'json'
         },
         round: {
             type: 'number',
