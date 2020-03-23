@@ -16,11 +16,11 @@ let { routes, onConnect, onDisconnect, onDisconnecting } = require('./controller
 
 let sessionMiddleware = session({
     store: new FileStore({
-        ttl: 60 * 60 * 24 * 7
+        ttl: 60 * 60 * 24 * 7  * 1000
     }),
     secret: '1',
     cookie: {
-        maxAge: 60 * 60 * 24 * 7
+        maxAge: 60 * 60 * 24 * 7 * 1000
     }
 });
 
