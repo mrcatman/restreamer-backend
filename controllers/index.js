@@ -51,7 +51,8 @@ const Utils = {
     async getConnectedSockets(game) {
         return await Utils.getRoomUsers('game_' + game.id);
     },
-    async sendUsersList(game) {
+    async sendUsersList(game) { // список игроков
+		
         let sockets = (await Utils.getConnectedSockets(game));
         let socketUserIds = sockets.map(socket => socket.sessionId);
         let users = game.users.map(user => {
@@ -91,7 +92,8 @@ const Utils = {
             socket.emit('roles', data)
         }
     },
-    async setGameState(game, {state, round, additionalStateData}) {
+    async setGameState(oldGameState, {state, round, additionalStateData}) { // обновление состояния игры
+	    let game = await Game.findOne({id: oldGameState.id});
         let data = {};
         if (state) {
             data.state = state
@@ -106,13 +108,18 @@ const Utils = {
                 data.additionalStateData = additionalStateData;
             }
         }
+		if (game.additionalStateData && game.additionalStateData.poll && additionalStateData.poll === null) {
+			data.additionalStateData.poll = null;
+			io.to('game_' + game.id).emit('close_poll');
+		}
         let updatedGame = await Game.updateOne({id: game.id}).set(data)
         Utils.sendGameState(updatedGame);
     },
     sendGameState(game) {
         let state = {
             stateName: game.state,
-            message: Utils.getGameMessage(game)
+            message: Utils.getGameMessage(game),
+			day: game.round
         };
         io.to('game_' + game.id).emit('state', state);
     },
@@ -152,12 +159,18 @@ const Utils = {
             case 'STATE_GAME_WIN':
                 message = 'Игра окончена. Победа на стороне мирных жителей!';
                 break;
+            case 'STATE_DOCTOR':
+                message = 'Доктор выбирает, кого он вылечит';
+                break;
+            case 'STATE_SHERIFF':
+                message = 'Шериф выбирает, кого он проверит';
+                break;
         }
         return message;
     },
-    getMafiaCount(playersCount) {
+    getMafiaCount(playersCount) { // сколько мафии в игре
         let mafiaCount = 1;
-        if (playersCount > 5) {
+        if (playersCount >= 5) {
             mafiaCount = 2;
         }
         if (playersCount > 10) {
@@ -165,12 +178,12 @@ const Utils = {
         }
         return mafiaCount;
     },
-    getAdditionalRoles(playersCount) {
+    getAdditionalRoles(playersCount) { // получение доп.ролей для игры
         let roles = [];
-        if (playersCount > 3) {
+        if (playersCount >= 4) {
             roles.push("DOCTOR");
         }
-        if (playersCount > 6) {
+        if (playersCount >= 4) {
             roles.push("SHERIFF");
         }
         return roles;
@@ -179,15 +192,16 @@ const Utils = {
         let roles = [];
         let mafiaCount = Utils.getMafiaCount(playersCount);
         for (let i = 0; i < mafiaCount; i++) {
-           roles.push(i === 0 && mafiaCount > 0 ? "MAFIA_BOSS" : "MAFIA");
+           roles.push(i === 0 && mafiaCount > 1 ? "MAFIA_BOSS" : "MAFIA");
         }
         let additionalRoles = Utils.getAdditionalRoles(playersCount);
         additionalRoles.forEach(role => {
             roles.push(role);
         })
-        for (let i = roles.length - 1; i < playersCount; i++) {
+        for (let i = roles.length - 1; i < playersCount - 1; i++) {
             roles.push("CIVILIAN");
         }
+		console.log(roles);
         return roles;
     },
     getMafiaRoles(game) {
@@ -202,7 +216,7 @@ const Utils = {
         })
         return mafiaRoles;
     },
-    async introduceMafia(game) {
+    async introduceMafia(game) { // знакомим мафию друг с другом
         let mafia = game.users.filter(user => (user.role === "MAFIA" || user.role === "MAFIA_BOSS"));
         let mafiaRoles = Utils.getMafiaRoles(game);
         for (let index in mafia) {
@@ -213,7 +227,8 @@ const Utils = {
         }
         await Utils.setGameState(game, {additionalStateData: {mafiaIntroduced: true}});
     },
-    async generatePoll(game, title, usersToVote, usersToSelect) {
+	async generatePollObject(game, title, usersToVote, usersToSelect) { // генерация опроса
+		console.log('generate poll', title, usersToVote, usersToSelect);
         usersToVote = usersToVote.filter(user => user.state !== "STATE_KILLED");
         usersToSelect = usersToSelect.filter(user => user.state !== "STATE_KILLED");
         let poll = {
@@ -222,9 +237,8 @@ const Utils = {
             variants: usersToSelect.map(user => user.sessionId),
             results: {},
         };
-        console.log('poll', poll);
-        await Utils.setGameState(game, {additionalStateData: {poll}});
-        usersToVote.forEach(user => {
+        console.log('users', usersToVote);
+		usersToVote.forEach(user => {
             if (socketSessions[user.sessionId]) {
                 socketSessions[user.sessionId].emit('poll', poll)
             }
@@ -232,6 +246,11 @@ const Utils = {
         if (socketSessions[game.userId]) {
             socketSessions[game.userId].emit('poll', poll)
         }
+		return poll;
+	},
+    async generatePoll(game, title, usersToVote, usersToSelect) {
+		let poll = await Utils.generatePollObject(game, title, usersToVote, usersToSelect);
+        await Utils.setGameState(game, {additionalStateData: {poll}});
     },
     async setPollResults(game, results) {
         let poll = game.additionalStateData.poll;
@@ -246,8 +265,8 @@ const Utils = {
             socketSessions[game.userId].emit('poll_results', poll.results)
         }
     },
-    getNightResults(game) {
-        let killed =  game.additionalStateData.healed || [];
+    getNightResults(game) { // узнаем убитых и вылеченных
+        let killed =  game.additionalStateData.killed || [];
         let healed =  game.additionalStateData.healed || [];
         return {killed: killed.filter(player => healed.indexOf(player) === -1)};
     },
@@ -256,14 +275,14 @@ const Utils = {
         let mafiaCount = users.filter(user => (user.role === "MAFIA" || user.role === "MAFIA_BOSS")).length;
         let civilCount = users.length - mafiaCount;
         console.log(mafiaCount, civilCount);
-        if (mafiaCount >= civilCount) {
+        if (mafiaCount >= civilCount) { // если мафии больше чем мирных (или столько же) - конец игры
             return true;
         }
         return false;
     },
     isGameWon(game) {
         let mafiaCount = game.users.filter(user => (user.role === "MAFIA" || user.role === "MAFIA_BOSS")).filter(user => user.state !== "STATE_KILLED").length;
-        return mafiaCount === 0;
+        return mafiaCount === 0; // если вся мафия убита - конец игры
     }
 }
 
@@ -359,8 +378,8 @@ module.exports = {
             }
             let player = await Player.create({sessionId: req.sessionID, name, state: '', game: game.id}).fetch();
             res.json(player);
-            //game = await game.populate('users');
-            Utils.sendUsersList(game);
+            let gameWithUsers = await Game.findOne({id: req.params.id}).populate('users');
+            Utils.sendUsersList(gameWithUsers);
         })
 
         const nextGameStep = async(req, res) => {
@@ -405,28 +424,33 @@ module.exports = {
                         Utils.sendRoles(socketSessions[user.sessionId], {[user.sessionId]: user.role});
                     }
                 })
-                Utils.setGameState(game, {state: "STATE_GREETING", round: 1});
+                await Utils.setGameState(game, {state: "STATE_GREETING", round: 1});
                 res.json({success: true});
                 return;
             }
             if (game.state === "STATE_GREETING") {
-                Utils.setGameState(game, {state: "STATE_NIGHT"});
+                await Utils.setGameState(game, {state: "STATE_NIGHT"});
                 res.json({success: true});
                 return;
             }
             if (game.state === "STATE_NIGHT") {
                 if (game.round === 1) {
                     await Utils.introduceMafia(game);
-                    Utils.setGameState(game, {state: "STATE_MAFIA_GREETING"});
+					let mafia =  game.users.filter(user => (user.role === "MAFIA" || user.role === "MAFIA_BOSS"));
+					//if (mafia.length > 1) {
+						await Utils.setGameState(game, {state: "STATE_MAFIA_GREETING"});
+					//} else {
+					//	await Utils.setGameState(game, {state: "STATE_MORNING"});
+					//}
                 } else {
-                    Utils.setGameState(game, {state: "STATE_MAFIA_SELECTING"});
-                    Utils.generatePoll(game, "Выберите жертву", game.users.filter(user => (user.role === "MAFIA" || user.role === "MAFIA_BOSS")), game.users.filter(user => (user.role !== "MAFIA" && user.role !== "MAFIA_BOSS")));
+				    let poll = await Utils.generatePollObject(game, "Выберите жертву", game.users.filter(user => (user.role === "MAFIA" || user.role === "MAFIA_BOSS")), game.users.filter(user => (user.role !== "MAFIA" && user.role !== "MAFIA_BOSS")));   
+                    await Utils.setGameState(game, {state: "STATE_MAFIA_SELECTING", additionalStateData: {poll}});
                 }
                 res.json({success: true});
                 return;
             }
             if (game.state === "STATE_MAFIA_GREETING") {
-                Utils.setGameState(game, {state: "STATE_MORNING"});
+                await Utils.setGameState(game, {state: "STATE_MORNING", round: game.round + 1});
                 res.json({success: true});
                 return;
             }
@@ -445,7 +469,8 @@ module.exports = {
                     res.status(400).json({error: "Не выбрана жертва"});
                     return;
                 }
-                Utils.setGameState(game, {additionalStateData: {killed: [killed]}});
+				console.log('set killed');
+                await Utils.setGameState(game, {additionalStateData: {killed: [killed], poll: null}});
                 let nextRole = Utils.getAdditionalRoles(game.users.length)[0];
                 if (nextRole) {
                     await handleAdditionalRoleStart(nextRole, game);
@@ -456,22 +481,26 @@ module.exports = {
                 return;
             }
             if (game.state === "STATE_MORNING") {
-                if (game.round === 1) {
-                    Utils.setGameState(game, {round: game.round + 1, state: "STATE_NIGHT"});
+                if (game.round <= 2) {
+                    await Utils.setGameState(game, {state: "STATE_NIGHT"});
                 } else {
-                    Utils.setGameState(game, {state: "STATE_RESULTS", additionalStateData: {poll: null}});
+                    await Utils.setGameState(game, {state: "STATE_RESULTS", additionalStateData: {poll: null}});
                     io.to('game_'+game.id).emit('night_results', Utils.getNightResults(game));
 
                     let killed =  game.additionalStateData.killed || [];
                     let healed =  game.additionalStateData.healed || [];
-                    for (let killedPlayer in game.additionalStateData.killed) {
-                        if (healed.indexOf(killedPlayer) === -1) {
-                            let player = await Player.updateOne({sessionId: killedPlayer}).set({
+                    for (let index in game.additionalStateData.killed) {
+						let killedPlayer = game.additionalStateData.killed[index];
+						 if (healed.indexOf(killedPlayer) === -1) { // если игрока не вылечили
+							let gamePlayer = game.users.filter(player => player.id === killedPlayer)[0];
+							if (gamePlayer) {
+								gamePlayer.state = "STATE_KILLED";
+							}
+                            let player = await Player.updateOne({sessionId: killedPlayer, game: game.id}).set({
                                 state: "STATE_KILLED"
                             });
-                            if (socketSessions[killedPlayer]) {
-                                socketSessions[killedPlayer].emit('your_state', "STATE_KILLED");
-                            }
+                            io.sockets.in('game_'+game.id).emit('user_state', {id: killedPlayer, state: "STATE_KILLED"});
+                          
                         }
                     }
                 }
@@ -480,12 +509,12 @@ module.exports = {
             }
             if (game.state === "STATE_RESULTS") {
                 if ( Utils.isGameOver(game)) {
-                    Utils.setGameState(game, {state: "STATE_GAME_OVER"});
+                    await Utils.setGameState(game, {state: "STATE_GAME_OVER"});
                     Utils.sendAllRoles(null, game);
                     res.json({success: true});
                 } else {
-                    Utils.setGameState(game, {state: "STATE_VOTING"});
-                    Utils.generatePoll(game, "Выберите того, кого отправите за решетку", game.users, game.users);
+					let poll = await Utils.generatePollObject(game, "Выберите того, кого отправите за решетку", game.users, game.users);
+                    await Utils.setGameState(game, {state: "STATE_VOTING", additionalStateData: {poll}});
                 }
             }
             if (game.state === "STATE_VOTING") {
@@ -495,11 +524,16 @@ module.exports = {
                     res.status(400).json({error: "Не выбран подсудимый или нет самого популярного результата"});
                     return;
                 }
-                Utils.setGameState(game, {state: "STATE_VOTING_RESULTS", additionalStateData: {poll: null, killed: null, accused}});
+                await Utils.setGameState(game, {state: "STATE_VOTING_RESULTS", additionalStateData: {poll: null, killed: null, accused}});
                 let accusedRole = Utils.getUserRoleById(game, accused);
                 io.to('game_'+game.id).emit('voting_results', {user: accused, role: accusedRole});
                 Utils.sendRolesToAll(game, {[accused]:  accusedRole});
-                let player = await Player.updateOne({sessionId: accused}).set({
+				
+				let gamePlayer = game.users.filter(player => player.id === accused)[0];
+				if (gamePlayer) {
+					gamePlayer.state = "STATE_KILLED";
+				}
+                let player = await Player.updateOne({sessionId: accused, game: game.id}).set({
                     state: "STATE_KILLED"
                 });
                 console.log(player);
@@ -508,16 +542,16 @@ module.exports = {
             }
             if (game.state === "STATE_VOTING_RESULTS") {
                 if (Utils.isGameOver(game)) {
-                    Utils.setGameState(game, {state: "STATE_GAME_OVER"});
+                    await Utils.setGameState(game, {state: "STATE_GAME_OVER"});
                     Utils.sendAllRoles(null, game);
                     res.json({success: true});
                 } else {
                     if (Utils.isGameWon(game)) {
-                        Utils.setGameState(game, {state: "STATE_GAME_WIN"});
+                        await Utils.setGameState(game, {state: "STATE_GAME_WIN"});
                         Utils.sendAllRoles(null, game);
                         res.json({success: true});
                     } else {
-                        Utils.setGameState(game, {round: game.round + 1, state: "STATE_NIGHT"});
+                        await Utils.setGameState(game, {round: game.round + 1, state: "STATE_NIGHT"});
                     }
                 }
             }
@@ -527,33 +561,35 @@ module.exports = {
         }
 
         const handleAdditionalRoleStart = async (role, game) => {
+			console.log('additional role', role);
             if (!role) {
-                await Utils.setGameState(game, {state: "STATE_MORNING", additionalStateData: {currentAdditionalRole: null}});
+                await Utils.setGameState(game, {state: "STATE_MORNING", round: game.round + 1, additionalStateData: {currentAdditionalRole: null}});
                 return;
             }
             let additionalRoles = Utils.getAdditionalRoles(game.users.length);
-            let roleIndex = roles.indexOf(role);
+            let roleIndex = additionalRoles.indexOf(role);
             switch (role) {
                 case 'DOCTOR':
-                    let doctor = game.users.filter(player => player.role === "DOCTOR" && player.state !== "STATE_KILLED");
-                    if (doctor) { // если доктор не убит, то вызываем его, иначе переходим к следующей роли
-                        await Utils.generatePoll(game, "Выберите того, кого хотите вылечить", [doctor], game.users.filter(player => player.sessionId !== doctor.sessionId));
-                        await Utils.setGameState(game, {state: "STATE_DOCTOR", additionalStateData: {currentAdditionalRole: "DOCTOR"}});
-                    } else {
-                        await handleAdditionalRoleStart(additionalRoles[roleIndex] + 1);
+                    let doctor = game.users.filter(player => player.role === "DOCTOR" && player.state !== "STATE_KILLED")[0];
+					if (doctor) { // если доктор не убит, то вызываем его, иначе переходим к следующей роли
+						let poll = await Utils.generatePollObject(game, "Выберите того, кого хотите вылечить", [doctor], game.users);
+						console.log("generated poll", poll);
+                        await Utils.setGameState(game, {state: "STATE_DOCTOR", additionalStateData: {currentAdditionalRole: "DOCTOR", poll}});
+					} else {
+                        await handleAdditionalRoleStart(additionalRoles[roleIndex + 1], game);
                     }
                     break;
-                case 'SHERIFF':
-                    let sheriff = game.users.filter(player => player.role === "SHERIFF" && player.state !== "STATE_KILLED");
+                case 'SHERIFF':  
+                    let sheriff = game.users.filter(player => player.role === "SHERIFF" && player.state !== "STATE_KILLED")[0];
                     if (sheriff) { // аналогично с шерифом
-                        await Utils.generatePoll(game, "Выберите того, кого хотите проверить", [sheriff], game.users.filter(player => player.sessionId !== sheriff.sessionId));
-                        await Utils.setGameState(game, {state: "STATE_SHERIFF", additionalStateData: {currentAdditionalRole: "SHERIFF"}});
-                    } else {
-                        await handleAdditionalRoleStart(additionalRoles[roleIndex] + 1);
+						let poll = await Utils.generatePollObject(game, "Выберите того, кого хотите проверить", [sheriff], game.users);
+                        await Utils.setGameState(game, {state: "STATE_SHERIFF", additionalStateData: {currentAdditionalRole: "SHERIFF", poll}});
+					 } else {
+                        await handleAdditionalRoleStart(additionalRoles[roleIndex + 1], game);
                     }
                     break;
                 default:
-                    await Utils.setGameState(game, {state: "STATE_MORNING", additionalStateData: {currentAdditionalRole: null}});
+                    await Utils.setGameState(game, {state: "STATE_MORNING", round: game.round + 1,  additionalStateData: {currentAdditionalRole: null}});
                     break;
             }
         }
@@ -562,13 +598,14 @@ module.exports = {
             let role = game.additionalStateData.currentAdditionalRole;
             let poll = game.additionalStateData.poll;
             let additionalRoles = Utils.getAdditionalRoles(game.users.length);
-            let roleIndex = roles.indexOf(role);
+            let roleIndex = additionalRoles.indexOf(role);
             switch (role) {
                 case 'DOCTOR':
-                    let doctorSelection = poll.results[Object.keys(poll.results)[0]]; // получаем выбор доктора, если он никого не выбрал то выдаем ошибку
+                    let doctorSelection = poll ? poll.results[Object.keys(poll.results)[0]] : null; // получаем выбор доктора, если он никого не выбрал то выдаем ошибку
                     if (doctorSelection) {
-                        await Utils.setGameState(game, {additionalStateData: {healed: [doctorResults]}});
-                        await handleAdditionalRoleStart(additionalRoles[roleIndex] + 1);
+                        await Utils.setGameState(game, {additionalStateData: {healed: [doctorSelection], poll: null}});
+						
+                        await handleAdditionalRoleStart(additionalRoles[roleIndex + 1], game);
                     } else {
                         res.status(403).json({text: "Не выбран пациент"});
                         return;
@@ -576,32 +613,35 @@ module.exports = {
                     break;
                 case 'SHERIFF':
                     if (!game.additionalStateData.sheriffResults) {
-                        let sheriffSelection = poll.results[Object.keys(poll.results)[0]];
+                        let sheriffSelection = poll ? poll.results[Object.keys(poll.results)[0]] : null;
                         if (sheriffSelection) { // аналогично с шерифом
                             let sheriff = game.users.filter(player => player.role === "SHERIFF" && player.state !== "STATE_KILLED");
                             let selectionRole = Utils.getUserRoleById(game, sheriffSelection);
                             let sheriffResults = {role: selectionRole, id: sheriffSelection};
                             await Utils.setGameState(game, {
                                 state: "STATE_SHERIFF",
-                                additionalStateData: {sheriffResults}
+                                additionalStateData: {sheriffResults, poll: null}
                             });
                             let sheriffSession = socketSessions[sheriff.sessionId];
                             if (sheriffSession) {
                                 sheriffSession.emit('sheriff_results', sheriffResults);
                             }
+						    if (socketSessions[game.userId]) {
+								socketSessions[game.userId].emit('sheriff_results', sheriffResults);
+							}
                         } else {
-                            await handleAdditionalRoleStart(additionalRoles[roleIndex] + 1);
+                            await handleAdditionalRoleStart(additionalRoles[roleIndex + 1], game);
                         }
                     } else {
                         await Utils.setGameState(game, {
                             state: "STATE_SHERIFF",
                             additionalStateData: {sheriffResults: null}
                         });
-                        await handleAdditionalRoleStart(additionalRoles[roleIndex] + 1);
+                        await handleAdditionalRoleStart(additionalRoles[roleIndex + 1], game);
                     }
                     break;
                 default:
-                    await Utils.setGameState(game, {state: "STATE_MORNING", additionalStateData: {currentAdditionalRole: null}});
+                    await Utils.setGameState(game, {state: "STATE_MORNING", round: game.round + 1, additionalStateData: {currentAdditionalRole: null}});
                     break;
             }
         }
@@ -643,7 +683,8 @@ module.exports = {
                         }
                         if (game.additionalStateData.poll) {
                             const canVote = game.additionalStateData.poll.availableFor.indexOf(req.sessionID) !== -1 || myRole === "HOST";
-                            if (canVote) {
+                            console.log('can vote', canVote);
+							if (canVote) {
                                 socket.emit('poll', game.additionalStateData.poll)
                             }
                         }
@@ -663,7 +704,7 @@ module.exports = {
                             socket.emit('voting_results', {user: accused, role: accusedRole});
                             Utils.sendRoles(socket, {[accused]:  accusedRole});
                         }
-                        if (myRole === "SHERIFF" && game.additionalStateData.sheriffResults) {
+                        if ((myRole === "HOST" || myRole === "SHERIFF") && game.additionalStateData.sheriffResults) {
                             socket.emit('sheriff_results', game.additionalStateData.sheriffResults);
                         }
                     }
@@ -672,7 +713,7 @@ module.exports = {
             game.yourId = req.sessionID;
             game.canEdit = game.userId === req.sessionID;
             game.yourState = myState;
-            game.stateData = {stateName: game.state, message: Utils.getGameMessage(game)};
+            game.stateData = {stateName: game.state, message: Utils.getGameMessage(game), day: game.round};
             res.json(filterFields(game, gameFields));
         });
 

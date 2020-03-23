@@ -4,6 +4,19 @@
     "start": "node index.js"
   },
   "nodemonConfig": {
-    "ignore": [".tmp/*", "sessions/*"]
+    "ignore": [
+      ".tmp/*",
+      "sessions/*"
+    ]
+  },
+  "dependencies": {
+    "body-parser": "^1.19.0",
+    "express": "^4.17.1",
+    "express-session": "^1.17.0",
+    "http": "0.0.0",
+    "sails-disk": "^1.1.2",
+    "session-file-store": "^1.4.0",
+    "socket.io": "^2.3.0",
+    "waterline": "^0.13.6"
   }
 }
