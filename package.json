@@ -6,7 +6,9 @@
   "nodemonConfig": {
     "ignore": [
       ".tmp/*",
-      "sessions/*"
+      "sessions/*",
+      "logs/*",
+      "records/*"
     ]
   },
   "dependencies": {

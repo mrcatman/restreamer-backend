@@ -1,0 +1,2 @@
+{"name":"Test task","url":"rtmp://s.catcast.tv/live/1","startTime":1587361560000,"endTime":1587447960000,"needRecord":false,"state":"STATE_NOT_STARTED","id":1,"processId":0,"_id":1,"recordProcessId":8184,"recordState":"STATE_ERROR"}
+{"$$indexCreated":{"fieldName":"id","unique":true,"sparse":false}}

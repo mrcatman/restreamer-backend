@@ -2,11 +2,11 @@ let Waterline = require('waterline');
 let sailsDiskAdapter = require('sails-disk');
 let waterline = new Waterline();
 
-let game = require('./models/game');
-let player = require('./models/player');
+let Task = require('./models/task');
+let Endpoint = require('./models/endpoint');
 
-waterline.registerModel(player);
-waterline.registerModel(game);
+waterline.registerModel(Task);
+waterline.registerModel(Endpoint);
 
 let config = {
     adapters: {

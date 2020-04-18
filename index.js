@@ -2,9 +2,10 @@ let express = require("express");
 let Server = require("http").Server;
 let session = require("express-session");
 let FileStore = require('session-file-store')(session);
-let bodyParser = require('body-parser')
+let bodyParser = require('body-parser');
 let app = express();
 let server = Server(app);
+let routes = require('./controllers/index');
 let io = require("socket.io")(server);
 
 let {
@@ -12,7 +13,6 @@ let {
     config
 } = require('./db/index.js');
 
-let { routes, onConnect, onDisconnect, onDisconnecting } = require('./controllers/index');
 
 let sessionMiddleware = session({
     store: new FileStore({
@@ -24,9 +24,7 @@ let sessionMiddleware = session({
     }
 });
 
-io.use(function(socket, next) {
-    sessionMiddleware(socket.request, socket.request.res, next);
-});
+
 app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
 
@@ -39,28 +37,14 @@ app.use((req, res, next) => {
 });
 
 
-io.on('connection', (socket) => {
-    let sessionId = socket.request.sessionID;
-    if (!sessionId) return;
-    onConnect(socket);
-    socket.on('disconnecting', () => {
-        onDisconnecting(socket);
-    })
-    socket.on('disconnect', () => {
-        onDisconnect(socket);
-    })
-})
-
-
-
 waterline.initialize(config, (err, db)=> {
     if (err) {
         console.log(err);
     }
-    app.db = db;
 
-    routes(app, io);
-
-    server.listen(8082);
+    setTimeout(() => {
+        routes(app, db, io);
+        server.listen(8082);
+    }, 500)
 
 });

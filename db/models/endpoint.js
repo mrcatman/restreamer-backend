@@ -1,6 +1,6 @@
 let Waterline = require('waterline');
-let player = Waterline.Collection.extend({
-    identity: 'player',
+let endpoint = Waterline.Collection.extend({
+    identity: 'endpoint',
     datastore: 'default',
     primaryKey: 'id',
     attributes: {
@@ -10,22 +10,20 @@ let player = Waterline.Collection.extend({
                 autoIncrement: true
             }
         },
-        sessionId: {
-            type: 'string'
+
+        task: {
+            model: 'task',
         },
-        name: {
-            type: 'string'
-        },
-        game: {
-            model: 'game',
-        },
-        role: {
+        url: {
             type: 'string',
         },
         state: {
             type: 'string'
+        },
+        processId: {
+            type: 'number'
         }
     }
 });
 
-module.exports = player;
+module.exports = endpoint;

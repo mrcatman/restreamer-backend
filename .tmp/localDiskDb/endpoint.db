@@ -1,0 +1,2 @@
+{"task":1,"url":"rtmp://s.catcast.tv:1935/live/2","state":"STATE_ERROR","id":1,"_id":1,"processId":12460}
+{"$$indexCreated":{"fieldName":"id","unique":true,"sparse":false}}
