@@ -40,6 +40,16 @@ let task = Waterline.Collection.extend({
         },
         recordProcessId: {
             type: 'number'
+        },
+        files: {
+            collection: 'file',
+            via: 'task'
+        },
+        disableAutolaunch: {
+            type: 'boolean'
+        },
+        useYTDL: {
+            type: 'boolean'
         }
     }
 });

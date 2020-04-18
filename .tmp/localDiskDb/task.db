@@ -1,2 +1,5 @@
-{"name":"Test task","url":"rtmp://s.catcast.tv/live/1","startTime":1587361560000,"endTime":1587447960000,"needRecord":false,"state":"STATE_NOT_STARTED","id":1,"processId":0,"_id":1,"recordProcessId":8184,"recordState":"STATE_ERROR"}
+{"name":"lo-fi hiphop","url":"http://hls.peers.tv/streaming/1_krymskiy/126/copy/playlist.m3u8","startTime":1587309840000,"endTime":0,"needRecord":true,"disableAutolaunch":true,"useYTDL":true,"state":"STATE_NOT_STARTED","id":1,"processId":0,"recordState":"STATE_ENDED","recordProcessId":104800,"_id":1}
 {"$$indexCreated":{"fieldName":"id","unique":true,"sparse":false}}
+{"$$deleted":true,"_id":1}
+{"name":"test","url":"http://hls.peers.tv/streaming/1_krymskiy/126/copy/playlist.m3u8","startTime":1587314940000,"endTime":0,"needRecord":true,"disableAutolaunch":true,"useYTDL":false,"state":"STATE_NOT_STARTED","id":2,"processId":0,"recordState":"","recordProcessId":0,"_id":2}
+{"$$deleted":true,"_id":2}

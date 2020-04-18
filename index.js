@@ -1,7 +1,7 @@
 let express = require("express");
 let Server = require("http").Server;
-let session = require("express-session");
-let FileStore = require('session-file-store')(session);
+//let session = require("express-session");
+//let FileStore = require('session-file-store')(session);
 let bodyParser = require('body-parser');
 let app = express();
 let server = Server(app);
@@ -14,21 +14,21 @@ let {
 } = require('./db/index.js');
 
 
-let sessionMiddleware = session({
-    store: new FileStore({
-        ttl: 60 * 60 * 24 * 7  * 1000
-    }),
-    secret: '1',
-    cookie: {
-        maxAge: 60 * 60 * 24 * 7 * 1000
-    }
-});
+//let sessionMiddleware = session({
+//    store: new FileStore({
+//        ttl: 60 * 60 * 24 * 7  * 1000
+//    }),
+//    secret: '1',
+//    cookie: {
+//        maxAge: 60 * 60 * 24 * 7 * 1000
+//    }
+//});
 
 
 app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
 
-app.use(sessionMiddleware);
+//app.use(sessionMiddleware);
 app.use((req, res, next) => {
 	res.header("Access-Control-Allow-Origin", "http://localhost:8080");
 	res.header("Access-Control-Allow-Headers", "Content-Type");
@@ -44,6 +44,8 @@ waterline.initialize(config, (err, db)=> {
 
     setTimeout(() => {
         routes(app, db, io);
+        app.use('/', express.static('dist'));
+        app.use('/records', express.static('records'));
         server.listen(8082);
     }, 500)
 
